@@ -154,56 +154,56 @@ Both connect to the same EdgeX exchange API. You can use them together or indepe
 
 ---
 
-## 完整使用说明（Full guide）
+## Full Guide
 
-### 1. 安装与配置
+### 1. Installation & Configuration
 
-1. 在 Cursor / Claude Code 的 MCP 配置中加入上述 `edgex` 配置（`command` + `args` + 可选 `env`）。
-2. **仅查行情**：可不配置 `EDGEX_ACCOUNT_ID`、`EDGEX_STARK_PRIVATE_KEY`，直接使用行情类工具。
-3. **下单与查账户**：在 MCP 的 `env` 中配置 `EDGEX_ACCOUNT_ID` 和 `EDGEX_STARK_PRIVATE_KEY`（主网/测试网各用对应账户）。
+1. Add the `edgex` entry shown above to your MCP configuration (`command` + `args` + optional `env`).
+2. **Market data only**: You can skip `EDGEX_ACCOUNT_ID` and `EDGEX_STARK_PRIVATE_KEY` — all public market data tools work without credentials.
+3. **Trading & account access**: Set `EDGEX_ACCOUNT_ID` and `EDGEX_STARK_PRIVATE_KEY` in the MCP `env` block (use the corresponding credentials for mainnet or testnet).
 
-### 2. 测试网 vs 主网
+### 2. Testnet vs Mainnet
 
-- **主网（生产）**：不设置 `EDGEX_TESTNET` 或设为 `0`，连接 `https://pro.edgex.exchange`，资金真实。
-- **测试网**：在 MCP 的 `env` 中设置 `EDGEX_TESTNET=1`，连接 `https://testnet.edgex.exchange`，用于安全试单。
+- **Mainnet (production)**: Leave `EDGEX_TESTNET` unset or set to `0`. Connects to `https://pro.edgex.exchange` with real funds.
+- **Testnet**: Set `EDGEX_TESTNET=1` in the MCP `env`. Connects to `https://testnet.edgex.exchange` for safe experimentation.
 
-建议在对话中先调用 **`edgex_get_environment`**，确认返回的 `environment` 与 `baseUrl` 符合预期再下单。
+Always call **`edgex_get_environment`** first and verify that `environment` and `baseUrl` match your expectation before placing any orders.
 
-### 3. 推荐使用顺序
+### 3. Recommended Workflow
 
-1. **确认环境**：`edgex_get_environment` → 看 `environment`（"mainnet" / "testnet"）。
-2. **查行情**：`edgex_get_ticker`、`edgex_get_funding` 等（可不传 symbol 查多合约，或传 BTC/ETH/SOL 等）。
-3. **下单前**：`edgex_get_balances`、`edgex_get_max_size` 确认余额与可开规模；与用户确认方向、数量、限价后再 `edgex_place_order`。
-4. **查单与撤单**：`edgex_get_orders` 查挂单；`edgex_get_order_status(orderId)` 查单笔（若返回 `found: false` 可改用 get_orders）；`edgex_cancel_order` / `edgex_cancel_all_orders` 撤单。
+1. **Confirm environment**: `edgex_get_environment` → check `environment` ("mainnet" / "testnet").
+2. **Check market data**: `edgex_get_ticker`, `edgex_get_funding`, etc. Omit `symbol` for a multi-contract overview, or pass `BTC`, `ETH`, `SOL`, etc.
+3. **Before placing orders**: Call `edgex_get_balances` and `edgex_get_max_size` to verify balance and available size. Confirm direction, quantity, and price with the user before calling `edgex_place_order`.
+4. **Order management**: Use `edgex_get_orders` to list open orders. Use `edgex_get_order_status(orderId)` for a single order (if it returns `found: false`, fall back to `get_orders`). Cancel with `edgex_cancel_order` or `edgex_cancel_all_orders`.
 
-### 4. 若 npx 无法启动（MCP 不出现）
+### 4. Troubleshooting: npx Fails to Start
 
-部分环境下 `npx @realnaka/edgex-mcp` 可能无法正确启动，可改用**本地路径**直接跑构建产物：
+In some environments, `npx @realnaka/edgex-mcp` may not launch correctly. Use the local build path instead:
 
 ```json
 "edgex": {
   "command": "node",
-  "args": ["/绝对路径/到/edgex-mcp/dist/index.js"],
+  "args": ["/absolute/path/to/edgex-mcp/dist/index.js"],
   "env": { "EDGEX_ACCOUNT_ID": "...", "EDGEX_STARK_PRIVATE_KEY": "0x..." }
 }
 ```
 
-或先本地安装再通过 `npm start` 启动（需在 package 目录下执行）：
+Alternatively, install globally and run directly:
 
 ```bash
 npm install -g @realnaka/edgex-mcp
-# 在 MCP 配置中使用 "command": "edgex-mcp" 或 "command": "npx", "args": ["-y", "@realnaka/edgex-mcp", "run", "start"]
+# Then use "command": "edgex-mcp" in your MCP config
 ```
 
 ---
 
-## 已知限制（Known limitations）
+## Known Limitations
 
-| 项目 | 说明 | 建议 |
-|------|------|------|
-| **get_order_status** | 部分环境下后端 `getOrderById` 返回空，MCP 会返回 `{ orderId, found: false, message: "..." }`。 | 需要单笔订单状态时，可先用 `edgex_get_orders` 在列表中查找该 orderId；MCP 已兼容后端返回对象/数组/嵌套格式，后端一旦返回数据即可正常解析。 |
-| **npx 启动** | 个别 npm 版本可能未正确安装 bin，导致 `npx @realnaka/edgex-mcp` 无法启动。 | 使用上文「若 npx 无法启动」中的 `node` + 本地 `dist/index.js` 方式，或全局安装后使用 `edgex-mcp` 命令。 |
-| **美股市价单** | 美股休市时段市价单会被拒绝，仅限价单在允许价格范围内可用。 | 美股合约请用限价单，或参考 `edgex://trading-rules` 中的价格区间说明。 |
+| Issue | Description | Workaround |
+|-------|-------------|------------|
+| **get_order_status** | The backend `getOrderById` endpoint may return empty in some cases. The MCP returns `{ orderId, found: false, message: "..." }` when this happens. | Use `edgex_get_orders` to find the order in the full list. The MCP already handles object/array/nested response formats — once the backend returns data, it will be parsed correctly. |
+| **npx startup** | Some npm versions may not install the `bin` entry correctly, causing `npx @realnaka/edgex-mcp` to fail. | Use the `node` + local `dist/index.js` approach described above, or install globally with `npm install -g`. |
+| **US equity market orders** | Market orders for US equity contracts are rejected outside trading hours. Only limit orders within the allowed price range are accepted. | Use limit orders for equity contracts. See `edgex://trading-rules` for price range details. |
 
 ---
 

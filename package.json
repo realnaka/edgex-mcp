@@ -1,6 +1,6 @@
 {
   "name": "@realnaka/edgex-mcp",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "MCP server for EdgeX perpetual contract trading — market data, account management, and order execution as AI agent tools",
   "type": "module",
   "main": "dist/index.js",
