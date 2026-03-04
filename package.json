@@ -1,12 +1,12 @@
 {
   "name": "@realnaka/edgex-mcp",
-  "version": "0.1.0",
+  "version": "0.2.3",
   "description": "MCP server for EdgeX perpetual contract trading — market data, account management, and order execution as AI agent tools",
   "type": "module",
+  "main": "dist/index.js",
   "bin": {
-    "edgex-mcp": "./dist/index.js"
+    "edgex-mcp": "dist/index.js"
   },
-  "main": "./dist/index.js",
   "files": [
     "dist",
     "README.md",
@@ -16,6 +16,7 @@
     "build": "tsc",
     "dev": "tsx src/index.ts",
     "clean": "rm -rf dist",
+    "start": "node dist/index.js",
     "prepublishOnly": "npm run clean && npm run build",
     "typecheck": "tsc --noEmit"
   },

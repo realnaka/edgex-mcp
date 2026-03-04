@@ -4,7 +4,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { EdgexClient } from './core/client.js';
-import { loadConfig } from './core/config.js';
+import { loadConfig, isTestnet } from './core/config.js';
 import { loadCachedContracts, saveCachedContracts, resolveSymbol, getCachedCoins, findCoin } from './core/symbols.js';
 import { computeL2OrderFields } from './core/l2-signer.js';
 import type { L2OrderInput, L2OrderMeta } from './core/l2-signer.js';
@@ -74,6 +74,7 @@ const server = new McpServer(
     instructions: `EdgeX MCP server for perpetual contract trading on EdgeX exchange.
 
 Key rules for AI agents:
+- Call edgex_get_environment to see current baseUrl and whether you are on testnet or mainnet (environment: "testnet" | "mainnet"). Like CLI --testnet, this is determined by EDGEX_TESTNET=1.
 - ALWAYS check edgex_get_balances and edgex_get_max_size before placing orders.
 - ALWAYS confirm order parameters with the user before calling edgex_place_order.
 - For stock contracts (TSLA, AAPL, NVDA, etc.) during market closure: market orders are REJECTED. Use limit orders only.
@@ -130,23 +131,55 @@ server.resource(
 );
 
 // ═══════════════════════════════════════════
+//  ENVIRONMENT (testnet vs mainnet — like CLI --testnet)
+// ═══════════════════════════════════════════
+
+server.tool(
+  'edgex_get_environment',
+  'Get current MCP environment: baseUrl, isTestnet, and environment label. Use this to confirm whether you are connected to testnet or mainnet before trading.',
+  {},
+  async () => {
+    try {
+      const config = await loadConfig();
+      const testnet = isTestnet();
+      const env = {
+        baseUrl: config.baseUrl,
+        wsUrl: config.wsUrl,
+        isTestnet: testnet,
+        environment: testnet ? 'testnet' : 'mainnet',
+      };
+      return textResult(env);
+    } catch (e: any) { return errorResult(e.message); }
+  },
+);
+
+// ═══════════════════════════════════════════
 //  PUBLIC MARKET DATA TOOLS
 // ═══════════════════════════════════════════
 
 server.tool(
   'edgex_get_ticker',
-  'Get 24h ticker: price, volume, open interest, funding rate. Omit symbol to get all contracts.',
+  'Get 24h ticker: price, volume, open interest, funding rate. Omit symbol to get all contracts (uses cached contract list, may return subset).',
   { symbol: z.string().optional().describe('e.g. BTC, ETH, SOL, TSLA') },
   async ({ symbol }) => {
     try {
       const c = await ensureClient();
-      let contractId: string | undefined;
       if (symbol) {
         const contract = await resolve(symbol);
-        contractId = contract.contractId;
+        const data = await c.getTicker(contract.contractId);
+        return textResult(data);
       }
-      const data = await c.getTicker(contractId);
-      return textResult(data);
+      // No symbol: try API without contractId first; if empty, fallback to first N contracts from cache
+      let data = await c.getTicker(undefined);
+      if (Array.isArray(data) && data.length > 0) return textResult(data);
+      const list = await ensureContracts();
+      const maxAll = 30;
+      const tickers: unknown[] = [];
+      for (let i = 0; i < Math.min(list.length, maxAll); i++) {
+        const row = await c.getTicker(list[i]!.contractId);
+        if (Array.isArray(row) && row[0]) tickers.push(row[0]);
+      }
+      return textResult(tickers);
     } catch (e: any) { return errorResult(e.message); }
   },
 );
@@ -189,18 +222,26 @@ server.tool(
 
 server.tool(
   'edgex_get_funding',
-  'Get current and predicted funding rate. Positive = longs pay shorts.',
+  'Get current and predicted funding rate. Positive = longs pay shorts. Omit symbol for first N contracts from cache.',
   { symbol: z.string().optional().describe('e.g. BTC, ETH, SOL. Omit for all.') },
   async ({ symbol }) => {
     try {
       const c = await ensureClient();
-      let contractId: string | undefined;
       if (symbol) {
         const contract = await resolve(symbol);
-        contractId = contract.contractId;
+        const data = await c.getLatestFundingRate(contract.contractId);
+        return textResult(data);
       }
-      const data = await c.getLatestFundingRate(contractId);
-      return textResult(data);
+      let data = await c.getLatestFundingRate(undefined);
+      if (Array.isArray(data) && data.length > 0) return textResult(data);
+      const list = await ensureContracts();
+      const maxAll = 30;
+      const out: unknown[] = [];
+      for (let i = 0; i < Math.min(list.length, maxAll); i++) {
+        const row = await c.getLatestFundingRate(list[i]!.contractId);
+        if (Array.isArray(row) && row[0]) out.push(row[0]);
+      }
+      return textResult(out);
     } catch (e: any) { return errorResult(e.message); }
   },
 );
@@ -292,7 +333,26 @@ server.tool(
     try {
       const c = await ensureClient();
       const data = await c.getOrderById(orderId);
-      return textResult(data);
+      // Normalize: API may return array, single object, or wrapper { order/data }
+      let order: unknown = null;
+      if (Array.isArray(data)) {
+        order = (data as unknown[]).length > 0 ? (data as unknown[])[0] : null;
+      } else if (data != null && typeof data === 'object') {
+        const obj = data as unknown as Record<string, unknown>;
+        if ('order' in obj && obj.order != null && typeof obj.order === 'object') {
+          order = obj.order;
+        } else if ('data' in obj && obj.data != null && typeof obj.data === 'object') {
+          order = obj.data;
+        } else if ('id' in obj || 'orderId' in obj || 'status' in obj) {
+          order = data;
+        } else {
+          order = data;
+        }
+      }
+      if (order == null) {
+        return textResult({ orderId, found: false, message: 'Order not found or no data returned' });
+      }
+      return textResult(order);
     } catch (e: any) { return errorResult(e.message); }
   },
 );

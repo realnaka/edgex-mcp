@@ -2,7 +2,7 @@
 
 MCP (Model Context Protocol) server for [EdgeX](https://pro.edgex.exchange) perpetual contract trading.
 
-Provides 15 AI agent tools for market data, account management, and order execution. Works with Cursor, Claude Code, OpenClaw, and any MCP-compatible AI client.
+Provides 16 AI agent tools for market data, account management, and order execution. Works with Cursor, Claude Code, OpenClaw, and any MCP-compatible AI client. Use **testnet** by setting `EDGEX_TESTNET=1` in the MCP env (like the CLI `--testnet` flag).
 
 ## Setup
 
@@ -42,15 +42,40 @@ Add to your MCP configuration:
 }
 ```
 
+**OpenClaw** (`~/.openclaw/openclaw.json`):
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "edgex": {
+        "command": "npx",
+        "args": ["-y", "@realnaka/edgex-mcp"],
+        "env": {
+          "EDGEX_ACCOUNT_ID": "your-account-id",
+          "EDGEX_STARK_PRIVATE_KEY": "0x..."
+        }
+      }
+    }
+  }
+}
+```
+
 Market data tools work without credentials. Account and trading tools require `EDGEX_ACCOUNT_ID` and `EDGEX_STARK_PRIVATE_KEY`.
 
 ## Tools
+
+### Environment (no auth)
+
+| Tool | Description |
+|------|-------------|
+| `edgex_get_environment` | Current baseUrl, isTestnet, environment ("testnet" \| "mainnet"). Call this to confirm testnet vs mainnet before trading. |
 
 ### Market Data (public, no auth)
 
 | Tool | Description |
 |------|-------------|
-| `edgex_get_ticker` | 24h ticker: price, volume, OI, funding rate |
+| `edgex_get_ticker` | 24h ticker: price, volume, OI, funding rate. Omit symbol for multiple contracts. |
 | `edgex_get_depth` | Order book bids/asks |
 | `edgex_get_kline` | Candlestick data (1m to 1M intervals) |
 | `edgex_get_funding` | Current and predicted funding rate |
@@ -126,6 +151,61 @@ This project is part of the EdgeX developer ecosystem. Each project is **indepen
 - **edgex-cli** — text-based CLI with `--json` output, installable SKILL.md for AI agents. Best for shell scripting and human interaction.
 
 Both connect to the same EdgeX exchange API. You can use them together or independently.
+
+---
+
+## 完整使用说明（Full guide）
+
+### 1. 安装与配置
+
+1. 在 Cursor / Claude Code 的 MCP 配置中加入上述 `edgex` 配置（`command` + `args` + 可选 `env`）。
+2. **仅查行情**：可不配置 `EDGEX_ACCOUNT_ID`、`EDGEX_STARK_PRIVATE_KEY`，直接使用行情类工具。
+3. **下单与查账户**：在 MCP 的 `env` 中配置 `EDGEX_ACCOUNT_ID` 和 `EDGEX_STARK_PRIVATE_KEY`（主网/测试网各用对应账户）。
+
+### 2. 测试网 vs 主网
+
+- **主网（生产）**：不设置 `EDGEX_TESTNET` 或设为 `0`，连接 `https://pro.edgex.exchange`，资金真实。
+- **测试网**：在 MCP 的 `env` 中设置 `EDGEX_TESTNET=1`，连接 `https://testnet.edgex.exchange`，用于安全试单。
+
+建议在对话中先调用 **`edgex_get_environment`**，确认返回的 `environment` 与 `baseUrl` 符合预期再下单。
+
+### 3. 推荐使用顺序
+
+1. **确认环境**：`edgex_get_environment` → 看 `environment`（"mainnet" / "testnet"）。
+2. **查行情**：`edgex_get_ticker`、`edgex_get_funding` 等（可不传 symbol 查多合约，或传 BTC/ETH/SOL 等）。
+3. **下单前**：`edgex_get_balances`、`edgex_get_max_size` 确认余额与可开规模；与用户确认方向、数量、限价后再 `edgex_place_order`。
+4. **查单与撤单**：`edgex_get_orders` 查挂单；`edgex_get_order_status(orderId)` 查单笔（若返回 `found: false` 可改用 get_orders）；`edgex_cancel_order` / `edgex_cancel_all_orders` 撤单。
+
+### 4. 若 npx 无法启动（MCP 不出现）
+
+部分环境下 `npx @realnaka/edgex-mcp` 可能无法正确启动，可改用**本地路径**直接跑构建产物：
+
+```json
+"edgex": {
+  "command": "node",
+  "args": ["/绝对路径/到/edgex-mcp/dist/index.js"],
+  "env": { "EDGEX_ACCOUNT_ID": "...", "EDGEX_STARK_PRIVATE_KEY": "0x..." }
+}
+```
+
+或先本地安装再通过 `npm start` 启动（需在 package 目录下执行）：
+
+```bash
+npm install -g @realnaka/edgex-mcp
+# 在 MCP 配置中使用 "command": "edgex-mcp" 或 "command": "npx", "args": ["-y", "@realnaka/edgex-mcp", "run", "start"]
+```
+
+---
+
+## 已知限制（Known limitations）
+
+| 项目 | 说明 | 建议 |
+|------|------|------|
+| **get_order_status** | 部分环境下后端 `getOrderById` 返回空，MCP 会返回 `{ orderId, found: false, message: "..." }`。 | 需要单笔订单状态时，可先用 `edgex_get_orders` 在列表中查找该 orderId；MCP 已兼容后端返回对象/数组/嵌套格式，后端一旦返回数据即可正常解析。 |
+| **npx 启动** | 个别 npm 版本可能未正确安装 bin，导致 `npx @realnaka/edgex-mcp` 无法启动。 | 使用上文「若 npx 无法启动」中的 `node` + 本地 `dist/index.js` 方式，或全局安装后使用 `edgex-mcp` 命令。 |
+| **美股市价单** | 美股休市时段市价单会被拒绝，仅限价单在允许价格范围内可用。 | 美股合约请用限价单，或参考 `edgex://trading-rules` 中的价格区间说明。 |
+
+---
 
 ## License
 
