@@ -1,0 +1,55 @@
+{
+  "name": "@realnaka/edgex-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for EdgeX perpetual contract trading — market data, account management, and order execution as AI agent tools",
+  "type": "module",
+  "bin": {
+    "edgex-mcp": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run clean && npm run build",
+    "typecheck": "tsc --noEmit"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/realnaka/edgex-mcp.git"
+  },
+  "homepage": "https://github.com/realnaka/edgex-mcp#readme",
+  "keywords": [
+    "edgex",
+    "mcp",
+    "model-context-protocol",
+    "ai-agent",
+    "perpetual",
+    "trading",
+    "defi",
+    "crypto",
+    "cursor",
+    "claude"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@noble/curves": "^2.0.1",
+    "@noble/hashes": "^2.0.1",
+    "@scure/starknet": "^2.0.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.5",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3"
+  }
+}
