@@ -1,6 +1,6 @@
 {
   "name": "@realnaka/edgex-mcp",
-  "version": "0.2.4",
+  "version": "0.2.8",
   "description": "MCP server for EdgeX perpetual contract trading — market data, account management, and order execution as AI agent tools",
   "type": "module",
   "main": "dist/index.js",
@@ -46,6 +46,7 @@
     "@noble/curves": "^2.0.1",
     "@noble/hashes": "^2.0.1",
     "@scure/starknet": "^2.0.0",
+    "undici": "^7.22.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {

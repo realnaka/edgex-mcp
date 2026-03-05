@@ -61,12 +61,14 @@ export const TRADING_RULES = `# EdgeX Trading Rules
 export const AGENT_GUIDELINES = `# EdgeX Agent Guidelines
 
 ## Core Rules
-- ALWAYS use edgex_get_balances and edgex_get_max_size before placing orders.
-- ALWAYS present order parameters to the user and get explicit confirmation before edgex_place_order.
-- NEVER place orders without user approval.
-- For market orders, ALWAYS warn about slippage risk.
-- For stock contracts (TSLA, AAPL, NVDA, GOOG, AMZN, META) during weekends/holidays:
-  DO NOT use market orders — they will be rejected. Use limit orders only.
+
+**Pre-trade safety:** Call edgex_get_balances and edgex_get_max_size before placing any order. Skipping these risks rejection (insufficient margin) or placing an order larger than the account can support — both waste the user's time and erode trust.
+
+**User confirmation:** Present order parameters (symbol, side, type, size, price, TP/SL) and wait for explicit confirmation before calling edgex_place_order. Trading involves real money — an accidental order can cause immediate financial loss. Never place orders without user approval.
+
+**Market order warning:** Market orders execute at whatever price is available, and thin order books can cause significant slippage. Warn the user before proceeding — especially for large sizes or low-liquidity contracts.
+
+**Stock contract restrictions:** For equity contracts (TSLA, AAPL, NVDA, GOOG, AMZN, META) during weekends and US market holidays, market orders are rejected by the exchange. Use limit orders only, within the allowed price range.
 
 ## Data Parsing
 - All numeric values are strings. Use parseFloat() to convert.

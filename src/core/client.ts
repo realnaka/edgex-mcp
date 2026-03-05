@@ -13,6 +13,7 @@ import type {
 } from './types.js';
 import { rateLimit } from './rate-limiter.js';
 import { signRequest } from './auth.js';
+import { getDispatcher } from './proxy.js';
 import { ApiError, ConfigError } from '../utils/errors.js';
 
 export class EdgexClient {
@@ -29,7 +30,12 @@ export class EdgexClient {
   private requireAuth(): void {
     if (!this.accountId || !this.starkPrivateKey) {
       throw new ConfigError(
-        'Authentication required. Run "edgex setup" or set EDGEX_ACCOUNT_ID and EDGEX_STARK_PRIVATE_KEY.',
+        'Account not configured. To set up authentication:\n' +
+        '1. If you have edgex-cli installed: run "edgex setup" in terminal\n' +
+        '2. Or add env vars to mcp.json: "env": { "EDGEX_ACCOUNT_ID": "...", "EDGEX_STARK_PRIVATE_KEY": "0x..." }\n' +
+        '3. Or create ~/.edgex/config.json with { "accountId": "...", "starkPrivateKey": "0x..." }\n' +
+        'After configuring, restart the MCP server (reload Cursor window).\n' +
+        'Use edgex_get_auth_status to check current configuration.',
       );
     }
   }
@@ -47,11 +53,13 @@ export class EdgexClient {
 
     let res: Response;
     try {
+      const dispatcher = getDispatcher();
       res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         ...(method === 'POST' && params ? { body: JSON.stringify(params) } : {}),
-      });
+        ...(dispatcher ? { dispatcher } : {}),
+      } as RequestInit);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       throw new ApiError('NETWORK', `Failed to connect to ${this.baseUrl} — ${msg}`);
@@ -93,7 +101,12 @@ export class EdgexClient {
     };
 
     let url = `${this.baseUrl}${path}`;
-    const init: RequestInit = { method, headers };
+    const dispatcher = getDispatcher();
+    const init: RequestInit = {
+      method,
+      headers,
+      ...(dispatcher ? { dispatcher } : {}),
+    } as RequestInit;
 
     if (method === 'GET' && params && Object.keys(params).length > 0) {
       const qs = Object.keys(params)

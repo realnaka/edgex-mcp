@@ -97,3 +97,7 @@ export async function saveConfig(config: Partial<EdgexConfig>): Promise<void> {
 export function getConfigPath(): string {
   return getConfigFile();
 }
+
+export function configFileExists(): boolean {
+  return existsSync(getConfigFile());
+}

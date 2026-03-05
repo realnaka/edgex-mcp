@@ -4,11 +4,12 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { EdgexClient } from './core/client.js';
-import { loadConfig, isTestnet } from './core/config.js';
+import { loadConfig, isTestnet, getConfigPath, configFileExists } from './core/config.js';
 import { loadCachedContracts, saveCachedContracts, resolveSymbol, getCachedCoins, findCoin } from './core/symbols.js';
 import { computeL2OrderFields } from './core/l2-signer.js';
 import type { L2OrderInput, L2OrderMeta } from './core/l2-signer.js';
 import type { ContractMeta, CoinMeta } from './core/types.js';
+import { setupProxy, getActiveProxy } from './core/proxy.js';
 import { TRADING_RULES, AGENT_GUIDELINES, OUTPUT_SCHEMAS } from './resources.js';
 
 // ─── State ───
@@ -73,15 +74,20 @@ const server = new McpServer(
   {
     instructions: `EdgeX MCP server for perpetual contract trading on EdgeX exchange.
 
+FIRST STEP — always call edgex_get_auth_status when starting a session to check if authentication is configured.
+- If authenticated: all tools are available (market data + trading).
+- If NOT authenticated: only public market data tools work. Guide the user to configure credentials before attempting account/trading operations.
+
 Key rules for AI agents:
 - Call edgex_get_environment to see current baseUrl and whether you are on testnet or mainnet (environment: "testnet" | "mainnet"). Like CLI --testnet, this is determined by EDGEX_TESTNET=1.
-- ALWAYS check edgex_get_balances and edgex_get_max_size before placing orders.
-- ALWAYS confirm order parameters with the user before calling edgex_place_order.
-- For stock contracts (TSLA, AAPL, NVDA, etc.) during market closure: market orders are REJECTED. Use limit orders only.
+- Check edgex_get_balances and edgex_get_max_size before placing any order — skipping these risks margin rejection or oversized orders.
+- Present order parameters to the user and get explicit confirmation before calling edgex_place_order — trading involves real money.
+- For stock contracts (TSLA, AAPL, NVDA, etc.) during market closure: market orders are rejected by the exchange. Use limit orders only.
+- Market orders can slip significantly in thin order books — warn the user before proceeding.
 - All numeric values are returned as strings. Use parseFloat() to parse.
 - Funding rate is a decimal: "0.0001" = 0.01%. Positive = longs pay shorts.
 - EdgeX uses cross-margin by default. All positions share collateral.
-- Oracle Price is used for liquidation, not last traded price.
+- Oracle Price (from Stork) is used for liquidation, not last traded price — so even if lastPrice doesn't hit liquidation, oraclePrice might.
 
 Read the resources 'edgex://trading-rules' and 'edgex://agent-guidelines' for detailed trading rules and best practices.`,
   },
@@ -131,22 +137,66 @@ server.resource(
 );
 
 // ═══════════════════════════════════════════
-//  ENVIRONMENT (testnet vs mainnet — like CLI --testnet)
+//  AUTH STATUS & ENVIRONMENT
 // ═══════════════════════════════════════════
 
 server.tool(
+  'edgex_get_auth_status',
+  'Check if authentication is configured. CALL THIS FIRST at the start of every session. Returns whether account credentials are set up and what tools are available.',
+  {},
+  async () => {
+    try {
+      const config = await loadConfig();
+      const hasAuth = !!(config.accountId && config.starkPrivateKey);
+      const testnet = isTestnet();
+      const configPath = getConfigPath();
+      const fileExists = configFileExists();
+
+      if (hasAuth) {
+        return textResult({
+          authenticated: true,
+          accountId: config.accountId,
+          environment: testnet ? 'testnet' : 'mainnet',
+          configSource: process.env.EDGEX_ACCOUNT_ID ? 'environment_variables' : 'config_file',
+          configPath,
+          availableTools: 'All tools available: market data, account, and trading.',
+        });
+      }
+
+      return textResult({
+        authenticated: false,
+        environment: testnet ? 'testnet' : 'mainnet',
+        configPath,
+        configFileExists: fileExists,
+        availableTools: 'Only public market data tools (ticker, depth, kline, funding, ratio, summary). Account and trading tools require authentication.',
+        setupInstructions: {
+          option1_cli: 'Install edgex-cli (npm i -g @realnaka/edgex-cli) then run: edgex setup',
+          option2_env: 'Add env vars to .cursor/mcp.json under the edgex server: "env": { "EDGEX_ACCOUNT_ID": "your_id", "EDGEX_STARK_PRIVATE_KEY": "0x..." }',
+          option3_file: `Create ${configPath} with: { "accountId": "your_id", "starkPrivateKey": "0x..." }`,
+          afterSetup: 'Restart MCP server by reloading the Cursor window (Cmd+Shift+P → Reload Window).',
+        },
+      });
+    } catch (e: any) { return errorResult(e.message); }
+  },
+);
+
+server.tool(
   'edgex_get_environment',
-  'Get current MCP environment: baseUrl, isTestnet, and environment label. Use this to confirm whether you are connected to testnet or mainnet before trading.',
+  'Get current MCP environment: baseUrl, testnet/mainnet, and auth status.',
   {},
   async () => {
     try {
       const config = await loadConfig();
       const testnet = isTestnet();
+      const hasAuth = !!(config.accountId && config.starkPrivateKey);
       const env = {
         baseUrl: config.baseUrl,
         wsUrl: config.wsUrl,
         isTestnet: testnet,
         environment: testnet ? 'testnet' : 'mainnet',
+        authenticated: hasAuth,
+        ...(hasAuth ? { accountId: config.accountId } : {}),
+        proxy: getActiveProxy() ?? 'none',
       };
       return textResult(env);
     } catch (e: any) { return errorResult(e.message); }
@@ -547,6 +597,7 @@ server.tool(
 // ─── Start Server ───
 
 async function main(): Promise<void> {
+  await setupProxy();
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }

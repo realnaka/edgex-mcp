@@ -44,6 +44,14 @@ Add to your MCP configuration:
 
 **OpenClaw** (`~/.openclaw/openclaw.json`):
 
+> **Prerequisite**: OpenClaw does not natively support MCP. Install MCP Porter first:
+>
+> ```bash
+> npx clawhub@latest install mcporter
+> ```
+>
+> Then configure the MCP server below. MCP Porter acts as a bridge between OpenClaw and MCP servers.
+
 ```json
 {
   "mcp": {
@@ -117,6 +125,33 @@ Flexible symbol input: `BTC`, `btc`, `BTCUSD`, or contract ID `10000001`.
 | `EDGEX_STARK_PRIVATE_KEY` | For trading | StarkEx private key |
 | `EDGEX_TESTNET` | No | Set to `1` for testnet |
 | `EDGEX_BASE_URL` | No | Override REST API URL |
+| `HTTPS_PROXY` / `https_proxy` | No | HTTP proxy URL (see below) |
+
+## Proxy Configuration
+
+Node.js's built-in `fetch` does not automatically use system proxy settings (`$https_proxy` / `$http_proxy`). If you're behind a proxy (common in China, corporate networks, etc.), requests to the EdgeX API will fail silently.
+
+**The MCP server auto-detects proxy env vars** at startup and configures `fetch` accordingly (requires Node.js >= 20 or `undici` installed). You just need to pass the proxy URL via MCP env config:
+
+```json
+{
+  "mcpServers": {
+    "edgex": {
+      "command": "npx",
+      "args": ["-y", "@realnaka/edgex-mcp"],
+      "env": {
+        "HTTPS_PROXY": "http://127.0.0.1:7890",
+        "EDGEX_ACCOUNT_ID": "your-account-id",
+        "EDGEX_STARK_PRIVATE_KEY": "0x..."
+      }
+    }
+  }
+}
+```
+
+**Why this is needed**: `npx` spawns a new Node.js process that does not inherit your shell's proxy environment variables. You must explicitly pass `HTTPS_PROXY` (or `HTTP_PROXY`) in the MCP `env` block.
+
+**Verify proxy is active**: Call `edgex_get_environment` — the response includes a `proxy` field showing the active proxy URL or `"none"`.
 
 ## Security
 
@@ -204,6 +239,8 @@ npm install -g @realnaka/edgex-mcp
 | **get_order_status** | The backend `getOrderById` endpoint may return empty in some cases. The MCP returns `{ orderId, found: false, message: "..." }` when this happens. | Use `edgex_get_orders` to find the order in the full list. The MCP already handles object/array/nested response formats — once the backend returns data, it will be parsed correctly. |
 | **npx startup** | Some npm versions may not install the `bin` entry correctly, causing `npx @realnaka/edgex-mcp` to fail. | Use the `node` + local `dist/index.js` approach described above, or install globally with `npm install -g`. |
 | **US equity market orders** | Market orders for US equity contracts are rejected outside trading hours. Only limit orders within the allowed price range are accepted. | Use limit orders for equity contracts. See `edgex://trading-rules` for price range details. |
+| **Proxy not inherited** | `npx` / Node.js `fetch` do not auto-inherit system proxy env vars, causing connection failures behind proxies. | Pass `HTTPS_PROXY` explicitly in the MCP `env` config. See [Proxy Configuration](#proxy-configuration). |
+| **OpenClaw MCP support** | OpenClaw does not natively support MCP protocol. | Install MCP Porter first: `npx clawhub@latest install mcporter`. |
 
 ---
 
